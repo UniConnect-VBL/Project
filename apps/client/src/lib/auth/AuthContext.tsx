@@ -6,29 +6,29 @@ import {
   useEffect,
   useState,
   useCallback,
-  ReactNode,
+  useMemo,
+  type ReactNode,
 } from "react";
-import { User, Session } from "@supabase/supabase-js";
-import { supabaseClient } from "../../utils/supabaseClient";
+import type { User, Session } from "@supabase/supabase-js";
+import { getSupabaseClient } from "../supabase";
 import { setTokenGetter, setErrorHandlers } from "../api";
 
 // ============================================================================
-// TYPES
+// TYPES - Rule 2: Clear interfaces
 // ============================================================================
+
+interface AuthResult {
+  error: Error | null;
+}
 
 interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
-  signInWithGoogle: () => Promise<{ error: Error | null }>;
-  signInWithEmail: (
-    email: string,
-    password: string
-  ) => Promise<{ error: Error | null }>;
-  signUpWithEmail: (
-    email: string,
-    password: string
-  ) => Promise<{ error: Error | null }>;
+  isAuthenticated: boolean;
+  signInWithGoogle: () => Promise<AuthResult>;
+  signInWithEmail: (email: string, password: string) => Promise<AuthResult>;
+  signUpWithEmail: (email: string, password: string) => Promise<AuthResult>;
   signOut: () => Promise<void>;
   refreshSession: () => Promise<void>;
 }
@@ -40,21 +40,23 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // ============================================================================
-// PROVIDER
+// PROVIDER - Rule 6: Use @supabase/ssr
 // ============================================================================
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const supabase = supabaseClient();
+  // Use singleton client from @supabase/ssr
+  const supabase = useMemo(() => getSupabaseClient(), []);
+
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Get access token for API calls
+  // Get access token for API calls - Rule 6: Axios interceptors
   const getAccessToken = useCallback(async (): Promise<string | null> => {
     const {
-      data: { session },
+      data: { session: currentSession },
     } = await supabase.auth.getSession();
-    return session?.access_token ?? null;
+    return currentSession?.access_token ?? null;
   }, [supabase]);
 
   // Initialize auth state
@@ -62,10 +64,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Set token getter for API interceptors
     setTokenGetter(getAccessToken);
 
-    // Set error handlers
+    // Set error handlers - Rule 8: Centralized error handling
     setErrorHandlers({
       onUnauthorized: () => {
-        // Clear auth state on 401
         setUser(null);
         setSession(null);
       },
@@ -75,12 +76,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const initializeAuth = async () => {
       try {
         const {
-          data: { session },
+          data: { session: currentSession },
         } = await supabase.auth.getSession();
-        setSession(session);
-        setUser(session?.user ?? null);
-      } catch (error) {
-        console.error("Error getting session:", error);
+        setSession(currentSession);
+        setUser(currentSession?.user ?? null);
+      } catch (err) {
+        // Rule 2: No console.error with any
+        if (err instanceof Error) {
+          console.error("Auth init error:", err.message);
+        }
       } finally {
         setLoading(false);
       }
@@ -91,12 +95,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Listen for auth changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log("Auth state changed:", event);
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
+    } = supabase.auth.onAuthStateChange(
+      (_event: string, newSession: Session | null) => {
+        setSession(newSession);
+        setUser(newSession?.user ?? null);
+        setLoading(false);
+      }
+    );
 
     return () => {
       subscription.unsubscribe();
@@ -109,8 +114,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   /**
    * Sign in with Google OAuth
+   * @returns AuthResult with error or null
    */
-  const signInWithGoogle = useCallback(async () => {
+  const signInWithGoogle = useCallback(async (): Promise<AuthResult> => {
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
@@ -128,15 +134,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       return { error: null };
     } catch (err) {
-      return { error: err as Error };
+      const error =
+        err instanceof Error ? err : new Error("Unknown error occurred");
+      return { error };
     }
   }, [supabase]);
 
   /**
    * Sign in with email/password
+   * @param email - User email address
+   * @param password - User password
+   * @returns AuthResult with error or null
    */
   const signInWithEmail = useCallback(
-    async (email: string, password: string) => {
+    async (email: string, password: string): Promise<AuthResult> => {
       try {
         const { error } = await supabase.auth.signInWithPassword({
           email,
@@ -148,7 +159,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         return { error: null };
       } catch (err) {
-        return { error: err as Error };
+        const error =
+          err instanceof Error ? err : new Error("Unknown error occurred");
+        return { error };
       }
     },
     [supabase]
@@ -156,9 +169,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   /**
    * Sign up with email/password
+   * @param email - User email address
+   * @param password - User password
+   * @returns AuthResult with error or null
    */
   const signUpWithEmail = useCallback(
-    async (email: string, password: string) => {
+    async (email: string, password: string): Promise<AuthResult> => {
       try {
         const { error } = await supabase.auth.signUp({
           email,
@@ -173,55 +189,79 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         return { error: null };
       } catch (err) {
-        return { error: err as Error };
+        const error =
+          err instanceof Error ? err : new Error("Unknown error occurred");
+        return { error };
       }
     },
     [supabase]
   );
 
   /**
-   * Sign out
+   * Sign out current user
    */
-  const signOut = useCallback(async () => {
+  const signOut = useCallback(async (): Promise<void> => {
     try {
       await supabase.auth.signOut();
       setUser(null);
       setSession(null);
       // Redirect to home page
       window.location.href = "/";
-    } catch (error) {
-      console.error("Error signing out:", error);
+    } catch (err) {
+      // Log error without exposing details
+      if (err instanceof Error) {
+        console.error("Sign out failed:", err.message);
+      }
     }
   }, [supabase]);
 
   /**
-   * Refresh session
+   * Refresh current session
    */
-  const refreshSession = useCallback(async () => {
+  const refreshSession = useCallback(async (): Promise<void> => {
     try {
       const { data, error } = await supabase.auth.refreshSession();
       if (error) throw error;
       setSession(data.session);
       setUser(data.session?.user ?? null);
-    } catch (error) {
-      console.error("Error refreshing session:", error);
+    } catch (err) {
+      // Log error without exposing details
+      if (err instanceof Error) {
+        console.error("Session refresh failed:", err.message);
+      }
     }
   }, [supabase]);
 
   // ============================================================================
-  // RENDER
+  // CONTEXT VALUE (Memoized for performance)
   // ============================================================================
 
-  const value: AuthContextType = {
-    user,
-    session,
-    loading,
-    signInWithGoogle,
-    signInWithEmail,
-    signUpWithEmail,
-    signOut,
-    refreshSession,
-  };
+  const isAuthenticated = !!user && !!session;
+
+  const value: AuthContextType = useMemo(
+    () => ({
+      user,
+      session,
+      loading,
+      isAuthenticated,
+      signInWithGoogle,
+      signInWithEmail,
+      signUpWithEmail,
+      signOut,
+      refreshSession,
+    }),
+    [
+      user,
+      session,
+      loading,
+      isAuthenticated,
+      signInWithGoogle,
+      signInWithEmail,
+      signUpWithEmail,
+      signOut,
+      refreshSession,
+    ]
+  );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
@@ -230,7 +270,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 // HOOK
 // ============================================================================
 
-export function useAuth() {
+/**
+ * Hook to access auth context
+ * @throws Error if used outside AuthProvider
+ */
+export function useAuth(): AuthContextType {
   const context = useContext(AuthContext);
   if (context === undefined) {
     throw new Error("useAuth must be used within an AuthProvider");

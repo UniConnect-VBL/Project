@@ -25,7 +25,10 @@ export function ProtectedRoute({
     if (!loading && !user) {
       // Store intended destination for redirect after login
       const currentPath = window.location.pathname;
-      router.push(`${fallbackUrl}?next=${encodeURIComponent(currentPath)}`);
+      const redirectUrl = `${fallbackUrl}?next=${encodeURIComponent(
+        currentPath
+      )}`;
+      router.push(redirectUrl as Parameters<typeof router.push>[0]);
     }
   }, [user, loading, router, fallbackUrl]);
 

@@ -1,10 +1,42 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import type { Route } from "next";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "../../lib/auth";
+import { getErrorMessage } from "../../lib/errors";
+import {
+  signInSchema,
+  signUpSchema,
+  oauthConsentSchema,
+} from "@unihood/shared";
+import type { ZodError } from "zod";
+
+/**
+ * Format Zod validation errors to user-friendly Vietnamese messages
+ */
+function formatZodError(error: ZodError): string {
+  const firstError = error.errors[0];
+  if (!firstError) return "Dữ liệu không hợp lệ";
+
+  const fieldMessages: Record<string, Record<string, string>> = {
+    email: {
+      invalid_string: "Email không hợp lệ",
+      too_small: "Email là bắt buộc",
+    },
+    password: {
+      too_small: "Mật khẩu phải có ít nhất 6 ký tự",
+    },
+    consentGiven: {
+      custom: "Bạn cần đồng ý với Điều khoản sử dụng",
+    },
+  };
+
+  const path = String(firstError.path[0] ?? "");
+  const code = firstError.code;
+  return fieldMessages[path]?.[code] ?? firstError.message;
+}
 
 export default function LoginPage() {
   const { user, signInWithEmail, signUpWithEmail, signInWithGoogle } =
@@ -18,8 +50,17 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<string | null>(errorParam);
+  const [message, setMessage] = useState<string | null>(null);
+  const [messageType, setMessageType] = useState<"error" | "success">("error");
   const [consentAgreed, setConsentAgreed] = useState(false);
+
+  // Set error from URL params
+  useEffect(() => {
+    if (errorParam) {
+      setMessage(getErrorMessage(errorParam));
+      setMessageType("error");
+    }
+  }, [errorParam]);
 
   // Redirect if already logged in
   useEffect(() => {
@@ -28,45 +69,104 @@ export default function LoginPage() {
     }
   }, [user, router, next]);
 
-  const handleEmailAuth = async () => {
-    // Require consent for signup
-    if (mode === "signup" && !consentAgreed) {
-      setMessage("Bạn cần đồng ý với Điều khoản sử dụng để đăng ký.");
-      return;
-    }
-
+  /**
+   * Handle email authentication (signin/signup)
+   */
+  const handleEmailAuth = useCallback(async () => {
     setLoading(true);
     setMessage(null);
 
-    if (mode === "signup") {
-      const { error } = await signUpWithEmail(email, password);
-      if (error) setMessage(error.message);
-      else setMessage("Kiểm tra email để xác nhận và đăng nhập.");
-    } else {
-      const { error } = await signInWithEmail(email, password);
-      if (error) setMessage(error.message);
-      else router.push(next as Route);
+    try {
+      if (mode === "signup") {
+        // Validate signup data
+        const validation = signUpSchema.safeParse({
+          email,
+          password,
+          consentGiven: consentAgreed,
+        });
+        if (!validation.success) {
+          setMessage(formatZodError(validation.error));
+          setMessageType("error");
+          setLoading(false);
+          return;
+        }
+
+        const { error } = await signUpWithEmail(email, password);
+        if (error) {
+          setMessage(getErrorMessage(error.message));
+          setMessageType("error");
+        } else {
+          setMessage("Kiểm tra email để xác nhận và đăng nhập.");
+          setMessageType("success");
+        }
+      } else {
+        // Validate signin data
+        const validation = signInSchema.safeParse({ email, password });
+        if (!validation.success) {
+          setMessage(formatZodError(validation.error));
+          setMessageType("error");
+          setLoading(false);
+          return;
+        }
+
+        const { error } = await signInWithEmail(email, password);
+        if (error) {
+          setMessage(getErrorMessage(error.message));
+          setMessageType("error");
+        } else {
+          router.push(next as Route);
+        }
+      }
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : "Unknown error";
+      setMessage(getErrorMessage(errorMsg));
+      setMessageType("error");
     }
+
     setLoading(false);
-  };
+  }, [
+    mode,
+    email,
+    password,
+    consentAgreed,
+    signUpWithEmail,
+    signInWithEmail,
+    router,
+    next,
+  ]);
 
-  const handleGoogle = async () => {
-    // Require consent for new users (signup via Google)
-    if (!consentAgreed) {
-      setMessage("Bạn cần đồng ý với Điều khoản sử dụng trước khi tiếp tục.");
+  /**
+   * Handle Google OAuth login
+   */
+  const handleGoogle = useCallback(async () => {
+    // Validate consent for OAuth
+    const validation = oauthConsentSchema.safeParse({
+      consentGiven: consentAgreed,
+    });
+    if (!validation.success) {
+      setMessage(formatZodError(validation.error));
+      setMessageType("error");
       return;
     }
 
     setLoading(true);
     setMessage(null);
 
-    const { error } = await signInWithGoogle();
-    if (error) {
-      setMessage(error.message);
+    try {
+      const { error } = await signInWithGoogle();
+      if (error) {
+        setMessage(getErrorMessage(error.message));
+        setMessageType("error");
+        setLoading(false);
+      }
+      // Will redirect to Google OAuth
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : "Unknown error";
+      setMessage(getErrorMessage(errorMsg));
+      setMessageType("error");
       setLoading(false);
     }
-    // Will redirect to Google OAuth
-  };
+  }, [consentAgreed, signInWithGoogle]);
 
   return (
     <main className="mx-auto max-w-md space-y-6 rounded-2xl bg-slate-900 p-6 shadow-lg border border-slate-700">
@@ -202,9 +302,7 @@ export default function LoginPage() {
       {message && (
         <p
           className={`text-sm ${
-            message.includes("email") || message.includes("xác nhận")
-              ? "text-green-400"
-              : "text-red-400"
+            messageType === "success" ? "text-green-400" : "text-red-400"
           }`}
         >
           {message}

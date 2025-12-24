@@ -99,7 +99,9 @@ export function Navbar() {
                       Hồ sơ cá nhân
                     </Link>
                     <Link
-                      href="/profile/wallet"
+                      href={
+                        "/profile/wallet" as Parameters<typeof Link>[0]["href"]
+                      }
                       className="flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-700 transition-colors"
                       onClick={() => setShowDropdown(false)}
                     >
