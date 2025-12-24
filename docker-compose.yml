@@ -14,9 +14,14 @@ services:
       - "4000:4000"
     volumes:
       - ./apps/api:/app/apps/api
+      - /app/apps/api/node_modules # Preserve node_modules from container
       - ./packages:/app/packages
+      - /app/packages/shared/node_modules # Preserve shared node_modules
+      - /app/packages/database/node_modules
+      - /app/packages/types/node_modules
       - ./pnpm-workspace.yaml:/app/pnpm-workspace.yaml
       - ./package.json:/app/package.json
+      - /app/node_modules # Preserve root node_modules
     command: ["pnpm", "--filter", "@uni/api", "dev"]
 
   worker:
@@ -30,9 +35,14 @@ services:
       - apps/worker/.env # <-- Đổi thành .env thật
     volumes:
       - ./apps/worker:/app/apps/worker
+      - /app/apps/worker/node_modules # Preserve node_modules from container
       - ./packages:/app/packages
+      - /app/packages/shared/node_modules
+      - /app/packages/database/node_modules
+      - /app/packages/types/node_modules
       - ./pnpm-workspace.yaml:/app/pnpm-workspace.yaml
       - ./package.json:/app/package.json
+      - /app/node_modules
     command: ["pnpm", "--filter", "@uni/worker", "dev"]
 
   client:
@@ -47,7 +57,13 @@ services:
       - "3000:3000"
     volumes:
       - ./apps/client:/app/apps/client
+      - /app/apps/client/node_modules # Preserve node_modules from container
+      - /app/apps/client/.next # Preserve Next.js build cache
       - ./packages:/app/packages
+      - /app/packages/shared/node_modules
+      - /app/packages/database/node_modules
+      - /app/packages/types/node_modules
       - ./pnpm-workspace.yaml:/app/pnpm-workspace.yaml
       - ./package.json:/app/package.json
+      - /app/node_modules
     command: ["pnpm", "--filter", "@uni/client", "dev"]

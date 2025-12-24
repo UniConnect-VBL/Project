@@ -1,6 +1,5 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
-import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
  * Cookie options type for server-side Supabase
@@ -22,7 +21,7 @@ interface CookieSetOptions {
  *
  * This creates a client for use in Server Components, Route Handlers, and Server Actions
  */
-export async function createClient(): Promise<SupabaseClient> {
+export async function createClient() {
   const cookieStore = await cookies();
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
