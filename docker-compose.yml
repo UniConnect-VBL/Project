@@ -1,0 +1,53 @@
+services:
+  # --- Development docker-compose - dùng Dockerfile.dev có pnpm ---
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile.dev
+    # depends_on:  <-- Xóa dòng này vì không còn phụ thuộc local
+    #   - redis
+    #   - supabase-db
+    env_file:
+      - apps/api/.env # <-- QUAN TRỌNG: Đổi thành .env thật
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./apps/api:/app/apps/api
+      - ./packages:/app/packages
+      - ./pnpm-workspace.yaml:/app/pnpm-workspace.yaml
+      - ./package.json:/app/package.json
+    command: ["pnpm", "--filter", "@uni/api", "dev"]
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile.dev
+    # depends_on: <-- Xóa
+    #   - redis
+    #   - supabase-db
+    env_file:
+      - apps/worker/.env # <-- Đổi thành .env thật
+    volumes:
+      - ./apps/worker:/app/apps/worker
+      - ./packages:/app/packages
+      - ./pnpm-workspace.yaml:/app/pnpm-workspace.yaml
+      - ./package.json:/app/package.json
+    command: ["pnpm", "--filter", "@uni/worker", "dev"]
+
+  client:
+    build:
+      context: .
+      dockerfile: apps/client/Dockerfile.dev
+    depends_on:
+      - api
+    env_file:
+      - apps/client/.env # <-- Đổi thành .env thật
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./apps/client:/app/apps/client
+      - ./packages:/app/packages
+      - ./pnpm-workspace.yaml:/app/pnpm-workspace.yaml
+      - ./package.json:/app/package.json
+    command: ["pnpm", "--filter", "@uni/client", "dev"]

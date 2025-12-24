@@ -1,0 +1,26 @@
+# Development Dockerfile - includes pnpm for hot reload
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install pnpm globally (more reliable than corepack in containers)
+RUN npm install -g pnpm
+
+# Copy workspace config first for caching
+COPY package.json pnpm-workspace.yaml ./
+COPY pnpm-lock.yaml* ./
+
+# Copy shared packages
+COPY packages ./packages
+
+# Copy client app
+COPY apps/client ./apps/client
+
+# Install all dependencies
+RUN pnpm install
+
+# Expose port
+EXPOSE 3000
+
+# Default command (can be overridden in docker-compose)
+CMD ["pnpm", "--filter", "@uni/client", "dev"]

@@ -1,0 +1,90 @@
+# ================================================================
+# DOCKER COMPOSE - PRODUCTION
+# Dùng file này trên server để chạy UniHood
+# ================================================================
+
+version: "3.9"
+
+services:
+  # ----------------------------------------
+  # API Service (Backend)
+  # Cổng: 4000
+  # ----------------------------------------
+  api:
+    image: registry.digitalocean.com/unihood-registry/api:latest
+    container_name: unihood-api
+    restart: always
+    ports:
+      - "4000:4000"
+    env_file:
+      - .env.api
+    networks:
+      - unihood-network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:4000/health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ----------------------------------------
+  # Worker Service (Background Jobs)
+  # Không expose port ra ngoài
+  # ----------------------------------------
+  worker:
+    image: registry.digitalocean.com/unihood-registry/worker:latest
+    container_name: unihood-worker
+    restart: always
+    env_file:
+      - .env.worker
+    networks:
+      - unihood-network
+    depends_on:
+      - api
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ----------------------------------------
+  # Client Service (Frontend)
+  # Cổng: 3000
+  # ----------------------------------------
+  client:
+    image: registry.digitalocean.com/unihood-registry/client:latest
+    container_name: unihood-client
+    restart: always
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.client
+    networks:
+      - unihood-network
+    depends_on:
+      - api
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# ----------------------------------------
+# Network chung cho tất cả services
+# ----------------------------------------
+networks:
+  unihood-network:
+    driver: bridge

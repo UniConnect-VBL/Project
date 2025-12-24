@@ -1,0 +1,16 @@
+node_modules
+.turbo
+.next
+dist
+build
+.env
+.DS_Store
+pnpm-lock.yaml
+.idea
+.vscode
+coverage
+tmp
+.cache
+docs/
+workflows/
+deploy.sh

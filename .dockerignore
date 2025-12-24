@@ -1,0 +1,12 @@
+node_modules
+dist
+build
+.next
+.git
+.github
+.env
+**/*.log
+tmp
+.cache
+
+
