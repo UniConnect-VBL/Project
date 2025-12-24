@@ -1,23 +1,32 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import type { Route } from "next";
 import { useRouter, useSearchParams } from "next/navigation";
-import { supabaseClient } from "../../utils/supabaseClient";
+import { useAuth } from "../../lib/auth";
 
 export default function LoginPage() {
-  const supabase = supabaseClient();
+  const { user, signInWithEmail, signUpWithEmail, signInWithGoogle } =
+    useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const next = searchParams.get("next") ?? "/";
+  const errorParam = searchParams.get("error");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(errorParam);
   const [consentAgreed, setConsentAgreed] = useState(false);
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (user) {
+      router.push(next as Route);
+    }
+  }, [user, router, next]);
 
   const handleEmailAuth = async () => {
     // Require consent for signup
@@ -30,18 +39,11 @@ export default function LoginPage() {
     setMessage(null);
 
     if (mode === "signup") {
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: { emailRedirectTo: window.location.origin },
-      });
+      const { error } = await signUpWithEmail(email, password);
       if (error) setMessage(error.message);
       else setMessage("Kiểm tra email để xác nhận và đăng nhập.");
     } else {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+      const { error } = await signInWithEmail(email, password);
       if (error) setMessage(error.message);
       else router.push(next as Route);
     }
@@ -56,16 +58,14 @@ export default function LoginPage() {
     }
 
     setLoading(true);
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-      },
-    });
+    setMessage(null);
+
+    const { error } = await signInWithGoogle();
     if (error) {
       setMessage(error.message);
       setLoading(false);
     }
+    // Will redirect to Google OAuth
   };
 
   return (
